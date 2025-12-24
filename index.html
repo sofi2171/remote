@@ -22,39 +22,42 @@
             return Math.floor(100000 + Math.random() * 900000).toString();
         }
         
-        // Working TURN servers - Tested and verified
+        // High Priority - Working TURN servers for different networks
         let enhancedIceServers = [
-            // Primary working TURN servers
             {
-                urls: [
-                    'turn:openrelay.metered.ca:80',
-                    'turn:openrelay.metered.ca:443',
-                    'turn:openrelay.metered.ca:443?transport=tcp'
-                ],
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
+                urls: 'turn:global.turn.twilio.com:3478?transport=udp',
+                username: '99ffca8b36d76728b4837e7b3611d011e7ebd80d4640a0f7d6f19fad2ae8bbd6',
+                credential: 'LKFqpqXMY8yrkqwbmKsD5LM1ts4Vd02Ie0BqAYh85M4='
             },
             {
-                urls: 'turn:numb.viagenie.ca',
-                credential: 'muazkh',
-                username: 'webrtc@live.com'
+                urls: 'turn:global.turn.twilio.com:3478?transport=tcp',
+                username: '99ffca8b36d76728b4837e7b3611d011e7ebd80d4640a0f7d6f19fad2ae8bbd6',
+                credential: 'LKFqpqXMY8yrkqwbmKsD5LM1ts4Vd02Ie0BqAYh85M4='
             },
             {
-                urls: [
-                    'turn:192.158.29.39:3478?transport=udp',
-                    'turn:192.158.29.39:3478?transport=tcp'
-                ],
-                credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
-                username: '28224511:1379330808'
+                urls: 'turn:global.turn.twilio.com:443?transport=tcp',
+                username: '99ffca8b36d76728b4837e7b3611d011e7ebd80d4640a0f7d6f19fad2ae8bbd6',
+                credential: 'LKFqpqXMY8yrkqwbmKsD5LM1ts4Vd02Ie0BqAYh85M4='
+            },
+            
+            // Free TURN servers with authentication
+            {
+                urls: 'turn:turn.bistri.com:80',
+                username: 'homeo',
+                credential: 'homeo'
+            },
+            {
+                urls: 'turn:turn.anyfirewall.com:443?transport=tcp',
+                username: 'webrtc',
+                credential: 'webrtc'
             },
             
             // Google STUN servers (backup)
-            {
-                urls: [
-                    'stun:stun.l.google.com:19302',
-                    'stun:stun1.l.google.com:19302'
-                ]
-            }
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
         ];
         
         // Initialize animated background when page loads
@@ -81,13 +84,17 @@
             }
         });
         
-        // Raw WebSocket signaling servers - now using signaling-client
-        let webSocketServers = [
-            'ws://localhost:8080',              // Local development
-            'wss://yourserver.com/signaling',   // Your production server
-            'wss://fallback1.com/signaling',    // Backup 1
-            'wss://fallback2.com/signaling'     // Backup 2
-        ];
+        // Smart WebSocket URL Configuration
+        let webSocketServers = [];
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            webSocketServers = ['ws://localhost:8080'];
+        } else {
+            // Production deployment URLs
+            webSocketServers = [
+                'wss://your-websocket-server.onrender.com',     // Render.com URL
+                'wss://your-websocket-server.up.railway.app'   // Railway.app URL
+            ];
+        }
         
         // Update WebSocket servers if signaling-client is available
         if (window.signalingClient) {
@@ -217,57 +224,193 @@
             }
         }
         
-        // Simplified connection - Always force TURN for different networks
-        async function connectWithFallback(id, isHost = false) {
-            const peerConfig = {
-                config: {
-                    iceServers: enhancedIceServers,
-                    iceCandidatePoolSize: 10,
-                    iceTransportPolicy: 'all', // Try all first
-                    bundlePolicy: 'max-bundle',
-                    rtcpMuxPolicy: 'require'
-                },
-                debug: 2 // More debug info
-            };
-            
-            // Try 2 attempts: first all, then force TURN
-            for (let attempt = 1; attempt <= 2; attempt++) {
-                try {
-                    if (attempt === 2) {
-                        // Force TURN on second attempt
-                        peerConfig.config.iceTransportPolicy = 'relay';
-                        console.log('🔄 Forcing TURN relay connection...');
-                    }
+        // PeerJS Configuration
+        const peerConfig = {
+            host: '0.peerjs.com',
+            port: 443,
+            path: '/',
+            secure: true,
+            config: {
+                iceServers: enhancedIceServers,
+                iceTransportPolicy: 'all',
+                bundlePolicy: 'max-bundle',
+                rtcpMuxPolicy: 'require'
+            },
+            debug: 2
+        };
+        
+        // Global variables
+        let peer = null;
+        let conn = null;
+        let call = null;
+        let localStream = null;
+        let isHost = false;
+        let isViewer = false;
+        
+        // Fixed startConnection function
+        async function startConnection(id, isHost = false) {
+            try {
+                const peer = new Peer(id, peerConfig);
+                
+                return new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('Connection timeout'));
+                    }, 30000);
                     
-                    const peer = new Peer(id, peerConfig);
-                    
-                    const result = await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            peer.destroy();
-                            reject(new Error(`Timeout attempt ${attempt}`));
-                        }, 25000);
+                    peer.on('open', () => {
+                        clearTimeout(timeout);
+                        console.log('✅ Peer connected');
                         
-                        peer.on('open', () => {
-                            clearTimeout(timeout);
-                            console.log(`✅ Connected (attempt ${attempt})`);
-                            resolve(peer);
-                        });
+                        // Connection monitoring
+                        if (peer._pc) {
+                            setupConnectionMonitoring(peer._pc);
+                        }
                         
-                        peer.on('error', (err) => {
-                            clearTimeout(timeout);
-                            console.error(`❌ Error attempt ${attempt}:`, err);
-                            peer.destroy();
-                            reject(err);
-                        });
+                        resolve(peer);
                     });
                     
-                    return result;
-                    
-                } catch (error) {
-                    console.log(`Attempt ${attempt} failed:`, error.message);
-                    if (attempt === 2) throw error;
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    peer.on('error', (err) => {
+                        clearTimeout(timeout);
+                        console.error('Peer error:', err);
+                        reject(err);
+                    });
+                });
+                
+            } catch (error) {
+                console.error('Connection failed:', error);
+                throw error;
+            }
+        }ription(offer);
+                        this.ws.send(JSON.stringify({
+                            type: 'offer',
+                            offer: offer,
+                            roomId: this.roomId
+                        }));
+                    }
                 }
+            }
+        }
+        
+        // Global variables
+        let peer = null;
+        let conn = null;
+        let call = null;
+        let localStream = null;
+        let isHost = false;
+        let isViewer = false;
+        
+        // Enhanced connection with PeerJS public servers
+        async function startConnection(peerId, isHostMode = false) {
+            return new Promise((resolve, reject) => {
+                const peerOptions = {
+                    host: '0.peerjs.com',
+                    port: 443,
+                    secure: true,
+                    config: {
+                        iceServers: enhancedIceServers,
+                        iceTransportPolicy: 'all',
+                        bundlePolicy: 'max-bundle',
+                        rtcpMuxPolicy: 'require'
+                    },
+                    debug: 2
+                };
+                
+                const newPeer = new Peer(peerId, peerOptions);
+                
+                newPeer.on('open', (id) => {
+                    console.log('✅ Peer connected with ID:', id);
+                    resolve(newPeer);
+                });
+                
+                newPeer.on('error', (err) => {
+                    console.error('❌ Peer error:', err);
+                    reject(err);
+                });
+                
+                setTimeout(() => {
+                    reject(new Error('Peer connection timeout'));
+                }, 15000);
+            });
+        }ription(offer);
+                        this.ws.send(JSON.stringify({
+                            type: 'offer',
+                            offer: offer,
+                            roomId: this.roomId
+                        }));
+                    }
+                }
+            }
+        }
+        
+        // Enhanced Connection Monitoring Function
+        function setupConnectionMonitoring(pc) {
+            if (!pc) return;
+            
+            console.log('🔍 Starting connection monitoring...');
+            
+            pc.oniceconnectionstatechange = () => {
+                const state = pc.iceConnectionState;
+                console.log('ICE Connection State:', state);
+                updateStatus(`Connection: ${state}`);
+                
+                if (state === 'connected' || state === 'completed') {
+                    console.log('✅ Direct or TURN connection established!');
+                    updateStatus('✅ Connected! (Using ' + 
+                        (pc.getStats ? 'Checking connection type...' : 'Peer-to-Peer') + ')', 'success');
+                    
+                    // Check if using TURN
+                    setTimeout(() => checkConnectionType(pc), 1000);
+                } else if (state === 'failed' || state === 'disconnected') {
+                    console.log('❌ Connection failed');
+                    updateStatus('❌ Connection lost, reconnecting...', 'error');
+                }
+            };
+            
+            pc.onicegatheringstatechange = () => {
+                console.log('ICE Gathering State:', pc.iceGatheringState);
+            };
+            
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    const candidate = event.candidate.candidate;
+                    if (candidate.includes('relay')) {
+                        console.log('🎯 Using TURN relay server');
+                        updateStatus('🔄 Using TURN relay for cross-network connection', 'warning');
+                    } else if (candidate.includes('srflx')) {
+                        console.log('📡 Using STUN server');
+                        updateStatus('📡 Using STUN for public IP', 'info');
+                    } else {
+                        console.log('🏠 Local/host candidate');
+                    }
+                }
+            };
+        }
+        
+        async function checkConnectionType(pc) {
+            try {
+                const stats = await pc.getStats();
+                let usingRelay = false;
+                
+                stats.forEach(report => {
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                        if (report.remoteCandidateId) {
+                            const remoteCandidate = stats.get(report.remoteCandidateId);
+                            if (remoteCandidate && remoteCandidate.candidateType === 'relay') {
+                                usingRelay = true;
+                            }
+                        }
+                    }
+                });
+                
+                if (usingRelay) {
+                    console.log('✅ TURN relay connection active (works across networks!)');
+                    updateStatus('✅ TURN connection active - Works across different networks!', 'success');
+                } else {
+                    console.log('✅ Direct peer-to-peer connection');
+                    updateStatus('✅ Direct P2P connection', 'success');
+                }
+            } catch (error) {
+                console.log('Could not determine connection type:', error);
             }
         }
         
@@ -2328,80 +2471,65 @@
         
         async function startHost() {
             try {
-                const id = generateId();
-                updateStatus('Connecting to signaling server...', 'warning');
+                const id = generateId(); // 6-digit ID
+                updateStatus('Starting connection...', 'warning');
                 
-                // Try WebSocket signaling first, fallback to PeerJS
-                try {
-                    const connection = new WebRTCConnection(true);
-                    await connection.connect(id);
+                // Simple PeerJS connection
+                peer = await startConnection(id, true);
+                backgroundPeer = peer;
+                isHost = true;
+                
+                document.getElementById('myId').style.display = 'block';
+                document.getElementById('idText').textContent = id;
+                updateStatus('Share this ID with viewer: ' + id, 'success');
+                saveSessionData(id, 'host');
+                
+                // Wait for viewer connection
+                peer.on('connection', (connection) => {
+                    conn = connection;
+                    backgroundConnection = connection;
+                    updateStatus('Viewer connected! Starting screen share...', 'success');
                     
-                    // WebSocket signaling successful
-                    document.getElementById('myId').style.display = 'block';
-                    document.getElementById('idText').textContent = id;
-                    updateStatus('Waiting for connection... Share this ID with the viewer.', 'warning');
-                    saveSessionData(id, 'host');
+                    // Show connection status
+                    showConnectionStatus();
                     
-                    connection.onStream = (stream) => {
-                        updateStatus('Viewer connected! Starting screen share...', 'success');
+                    connection.on('open', () => {
+                        console.log('✅ Data channel open');
                         setTimeout(() => shareScreen(), 1000);
-                    };
+                    });
                     
-                } catch (wsError) {
-                    console.log('WebSocket failed, using PeerJS fallback');
-                    
-                    // Fallback to PeerJS
-                    peer = await connectWithFallback(id, true);
-                    backgroundPeer = peer;
-                    isHost = true;
-                    
-                    document.getElementById('myId').style.display = 'block';
-                    document.getElementById('idText').textContent = id;
-                    updateStatus('Waiting for connection... Share this ID with the viewer.', 'warning');
-                    saveSessionData(id, 'host');
-                    
-                    peer.on('connection', (connection) => {
-                        conn = connection;
-                        backgroundConnection = connection;
-                        updateStatus('Viewer connected! Starting screen share...', 'success');
-                        
-                        // Show connection status
-                        showConnectionStatus();
-                        
-                        setTimeout(() => shareScreen(), 1000);
-                        
-                        conn.on('data', (data) => {
-                            if (data.type === 'mouse') {
-                                simulateMouseEvent(data);
-                            } else if (data.type === 'keyboard') {
-                                simulateKeyboardEvent(data);
-                            } else if (data.type === 'viewer_audio_enabled') {
-                                updateStatus('Viewer enabled microphone - You can hear them', 'success');
-                            } else if (data.type === 'stop_sharing') {
-                                stopBackgroundSharing();
-                            } else if (data.type === 'stop_request') {
-                                if (confirm('Viewer requested to stop sharing. Do you want to stop?')) {
-                                    stopBackgroundSharing();
-                                }
-                            }
-                        });
-                        
-                        conn.on('close', () => {
-                            updateStatus('Viewer disconnected', 'warning');
-                            hideConnectionStatus();
+                    connection.on('data', (data) => {
+                        console.log('Data received:', data);
+                        if (data.type === 'mouse') {
+                            simulateMouseEvent(data);
+                        } else if (data.type === 'keyboard') {
+                            simulateKeyboardEvent(data);
+                        } else if (data.type === 'viewer_audio_enabled') {
+                            updateStatus('Viewer enabled microphone - You can hear them', 'success');
+                        } else if (data.type === 'stop_sharing') {
                             stopBackgroundSharing();
-                        });
+                        } else if (data.type === 'stop_request') {
+                            if (confirm('Viewer requested to stop sharing. Do you want to stop?')) {
+                                stopBackgroundSharing();
+                            }
+                        }
                     });
                     
-                    peer.on('call', (call) => {
-                        console.log('Unexpected call received by host');
+                    connection.on('close', () => {
+                        updateStatus('Viewer disconnected', 'warning');
+                        hideConnectionStatus();
+                        stopBackgroundSharing();
                     });
-                    
-                    peer.on('error', (err) => {
-                        console.error('Peer error:', err);
-                        updateStatus('Connection error: ' + err.message, 'error');
-                    });
-                }
+                });
+                
+                peer.on('call', (call) => {
+                    console.log('Unexpected call received by host');
+                });
+                
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    updateStatus('Connection error: ' + err.message, 'error');
+                });
                 
             } catch (error) {
                 updateStatus('Error starting host: ' + error.message, 'error');
@@ -2644,36 +2772,35 @@
             }
         }
         
-        function connectToHost() {
+        async function connectToHost() {
             const hostId = document.getElementById('connectId').value.trim();
             if (!hostId || hostId.length !== 6) {
                 updateStatus('Please enter a valid 6-digit code', 'error');
                 return;
             }
             
-            updateStatus('Connecting to host...', 'warning');
+            updateStatus('Connecting to ' + hostId + '...', 'warning');
             
-            connectWithFallback(null, false).then(peerInstance => {
-                peer = peerInstance;
+            try {
+                // Generate viewer ID
+                const myId = generateId();
+                peer = await startConnection(myId, false);
                 isViewer = true;
                 
-                updateStatus('Establishing connection...', 'warning');
-                
+                // Connect to host
                 conn = peer.connect(hostId, {
                     reliable: true,
                     serialization: 'json'
                 });
-                saveSessionData(hostId, 'viewer');
                 
                 conn.on('open', () => {
-                    updateStatus('Connected! Waiting for video stream...', 'success');
-                    console.log('✅ Data connection established');
+                    updateStatus('Connected! Waiting for screen...', 'success');
+                    console.log('✅ Connected to host');
                 });
                 
                 conn.on('error', (err) => {
                     console.error('Connection error:', err);
-                    updateStatus('Connection failed - Retrying...', 'error');
-                    setTimeout(() => connectToHost(), 3000);
+                    updateStatus('Connection failed: ' + err.message, 'error');
                 });
                 
                 conn.on('close', () => {
@@ -2681,9 +2808,9 @@
                     cleanup();
                 });
                 
+                // Wait for video call
                 peer.on('call', (call) => {
                     updateStatus('Receiving video stream...', 'warning');
-                    console.log('📹 Incoming call received');
                     
                     // Answer the call immediately
                     call.answer();
@@ -2776,13 +2903,13 @@
                     setTimeout(() => connectToHost(), 3000);
                 });
                 
-            }).catch(error => {
+            } catch (error) {
                 updateStatus('Failed to connect: ' + error.message, 'error');
                 setTimeout(() => {
                     updateStatus('Retrying connection...', 'warning');
                     connectToHost();
                 }, 5000);
-            });
+            }
         }
         
         function setupRemoteControl() {
