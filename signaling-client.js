@@ -1,4 +1,4 @@
-// WebSocket Signaling Client
+// WebSocket Signaling Client for Render Deployment
 class SignalingClient {
     constructor() {
         this.ws = null;
@@ -7,36 +7,81 @@ class SignalingClient {
         this.isConnected = false;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        
+        // Production and development server URLs
+        this.servers = [
+            'wss://your-app-name.onrender.com',  // Replace with your Render URL
+            'ws://localhost:8080'                // Local development
+        ];
     }
     
-    connect(serverUrl = 'ws://localhost:8080') {
-        try {
-            this.ws = new WebSocket(serverUrl);
-            
-            this.ws.onopen = () => {
-                console.log('Connected to signaling server');
-                this.isConnected = true;
-                this.reconnectAttempts = 0;
-            };
-            
-            this.ws.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                this.handleMessage(data);
-            };
-            
-            this.ws.onclose = () => {
-                console.log('Disconnected from signaling server');
-                this.isConnected = false;
-                this.attemptReconnect(serverUrl);
-            };
-            
-            this.ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
-            
-        } catch (error) {
-            console.error('Failed to connect to signaling server:', error);
+    init() {
+        // Auto-connect to available server
+        this.connectToAvailableServer();
+    }
+    
+    async connectToAvailableServer() {
+        for (const serverUrl of this.servers) {
+            try {
+                console.log(`Trying to connect to: ${serverUrl}`);
+                await this.connect(serverUrl);
+                if (this.isConnected) {
+                    console.log(`✅ Connected to: ${serverUrl}`);
+                    return;
+                }
+            } catch (error) {
+                console.log(`❌ Failed to connect to: ${serverUrl}`);
+                continue;
+            }
         }
+        console.log('⚠️ All signaling servers failed, using PeerJS fallback');
+    }
+    
+    getServers() {
+        return this.servers;
+    }
+    
+    connect(serverUrl) {
+        return new Promise((resolve, reject) => {
+            try {
+                this.ws = new WebSocket(serverUrl);
+                
+                const timeout = setTimeout(() => {
+                    this.ws.close();
+                    reject(new Error('Connection timeout'));
+                }, 10000);
+                
+                this.ws.onopen = () => {
+                    clearTimeout(timeout);
+                    console.log('Connected to signaling server');
+                    this.isConnected = true;
+                    this.reconnectAttempts = 0;
+                    resolve();
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleMessage(data);
+                };
+                
+                this.ws.onclose = () => {
+                    clearTimeout(timeout);
+                    console.log('Disconnected from signaling server');
+                    this.isConnected = false;
+                    this.attemptReconnect(serverUrl);
+                };
+                
+                this.ws.onerror = (error) => {
+                    clearTimeout(timeout);
+                    console.error('WebSocket error:', error);
+                    reject(error);
+                };
+                
+            } catch (error) {
+                console.error('Failed to connect to signaling server:', error);
+                reject(error);
+            }
+        });
     }
     
     attemptReconnect(serverUrl) {

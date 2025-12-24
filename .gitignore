@@ -11,22 +11,6 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# IDE/Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
 # Logs
 logs
 *.log
@@ -40,30 +24,21 @@ pids
 # Coverage directory used by tools like istanbul
 coverage/
 
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
 # Build outputs
 dist/
 build/
-out/
-
-# Temporary folders
-tmp/
-temp/
-
-# Firebase
-.firebase/
-firebase-debug.log
-
-# Docker
-docker-compose.override.yml
-
-# SSL certificates (if any)
-*.pem
-*.key
-*.crt
-
-# Database files
-*.db
-*.sqlite
-
-# Cache
-.cache/
