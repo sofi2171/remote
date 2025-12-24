@@ -992,20 +992,22 @@
             }
             
             .main-content {
-                padding-top: 0;
-                height: 100vh;
-                overflow: hidden;
+                padding-top: 80px !important;
+                height: auto !important;
+                overflow: visible !important;
+                grid-template-columns: 1fr !important;
             }
             
             .host-section, .client-section {
-                height: calc(100vh - 20px);
-                margin: 10px;
-                overflow-y: auto;
+                height: auto !important;
+                margin: 10px !important;
+                overflow-y: visible !important;
+                display: block !important;
             }
             
             .video-container {
-                height: calc(100vh - 200px);
-                width: 100%;
+                height: 300px !important;
+                width: 100% !important;
             }
             
             /* Mobile toolbar toggle button */
@@ -2900,10 +2902,18 @@
                 clearTimeout(longPressTimer);
             });
             
-            // Keyboard event listeners for desktop
+            // Enhanced keyboard event listeners for desktop
             document.addEventListener('keydown', (e) => {
                 if (isViewer && document.getElementById('videoContainer').classList.contains('active')) {
                     e.preventDefault();
+                    
+                    // Show what user is typing locally
+                    const clientStatus = document.getElementById('clientStatus');
+                    if (clientStatus) {
+                        clientStatus.innerHTML = `<i class="fas fa-keyboard"></i> Typing: "${e.key}"`;
+                        clientStatus.className = 'status success';
+                    }
+                    
                     sendKeyboardEvent(e.key, 'keydown');
                 }
             });
@@ -2912,6 +2922,15 @@
                 if (isViewer && document.getElementById('videoContainer').classList.contains('active')) {
                     e.preventDefault();
                     sendKeyboardEvent(e.key, 'keyup');
+                    
+                    // Clear typing status after keyup
+                    setTimeout(() => {
+                        const clientStatus = document.getElementById('clientStatus');
+                        if (clientStatus && clientStatus.innerHTML.includes('Typing:')) {
+                            clientStatus.innerHTML = '<i class="fas fa-info-circle"></i> Connected! You can now control the remote screen.';
+                            clientStatus.className = 'status success';
+                        }
+                    }, 500);
                 }
             });
         }
@@ -2980,17 +2999,40 @@
             }, 5000);
         }
         
-        // Simulate mouse and keyboard events on host side
+        // Simulate mouse and keyboard events on host side - Enhanced
         function simulateMouseEvent(data) {
-            console.log('Simulating mouse event:', data.event, 'at', data.x, data.y);
-            // Note: Actual mouse simulation requires browser extensions or native apps
-            // This is a placeholder for the simulation logic
+            console.log('🖱️ Mouse Event:', data.event, 'at', data.x, data.y);
+            
+            // Create visual feedback for host
+            const hostStatus = document.getElementById('hostStatus');
+            if (hostStatus) {
+                hostStatus.innerHTML = `<i class="fas fa-mouse-pointer"></i> Viewer ${data.event} at (${Math.round(data.x * 100)}%, ${Math.round(data.y * 100)}%)`;
+                hostStatus.className = 'status success';
+            }
+            
+            // In a real implementation, this would use browser extensions or native apps
+            // For demo purposes, we show the interaction
         }
         
         function simulateKeyboardEvent(data) {
-            console.log('Simulating keyboard event:', data.event, 'key:', data.key);
-            // Note: Actual keyboard simulation requires browser extensions or native apps
-            // This is a placeholder for the simulation logic
+            console.log('⌨️ Keyboard Event:', data.event, 'key:', data.key);
+            
+            // Create visual feedback for host
+            const hostStatus = document.getElementById('hostStatus');
+            if (hostStatus) {
+                hostStatus.innerHTML = `<i class="fas fa-keyboard"></i> Viewer typed: "${data.key}"`;
+                hostStatus.className = 'status success';
+                
+                // Clear after 2 seconds
+                setTimeout(() => {
+                    if (hostStatus.innerHTML.includes('Viewer typed')) {
+                        hostStatus.innerHTML = '<i class="fas fa-info-circle"></i> Screen sharing active - Viewer can control your screen';
+                    }
+                }, 2000);
+            }
+            
+            // In a real implementation, this would simulate actual keyboard input
+            // For demo purposes, we show what was typed
         }
         
         // Virtual keyboard for mobile devices
