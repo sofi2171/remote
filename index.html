@@ -1430,14 +1430,17 @@
                                 <i class="fas fa-ellipsis-v"></i>
                             </button>
                             <div class="controls-menu hidden" id="controlsMenu">
-                                <button id="micBtn">
-                                    <i class="fas fa-microphone-slash"></i> Enable Mic
+                                <button id="viewerMicBtn">
+                                    <i class="fas fa-microphone-slash"></i> Enable My Mic
                                 </button>
-                                <button id="recordBtn">
-                                    <i class="fas fa-record-vinyl"></i> Record
+                                <button id="viewerRecordBtn">
+                                    <i class="fas fa-record-vinyl"></i> Record Session
                                 </button>
-                                <button id="switchCameraBtn" class="hidden">
-                                    <i class="fas fa-camera-rotate"></i> Front Camera
+                                <button id="fullscreenBtn">
+                                    <i class="fas fa-expand"></i> Fullscreen
+                                </button>
+                                <button id="virtualKeyboardBtn">
+                                    <i class="fas fa-keyboard"></i> Virtual Keyboard
                                 </button>
                                 <button id="stopSharingBtn">
                                     <i class="fas fa-stop"></i> Stop Sharing
@@ -2025,14 +2028,17 @@
             const toggleMenuBtn = document.getElementById('toggleMenuBtn');
             if (toggleMenuBtn) toggleMenuBtn.addEventListener('click', toggleControlsMenu);
             
-            const micBtn = document.getElementById('micBtn');
-            if (micBtn) micBtn.addEventListener('click', toggleMicrophone);
+            const viewerMicBtn = document.getElementById('viewerMicBtn');
+            if (viewerMicBtn) viewerMicBtn.addEventListener('click', toggleViewerMicrophone);
             
-            const recordBtn = document.getElementById('recordBtn');
-            if (recordBtn) recordBtn.addEventListener('click', startRecording);
+            const viewerRecordBtn = document.getElementById('viewerRecordBtn');
+            if (viewerRecordBtn) viewerRecordBtn.addEventListener('click', startViewerRecording);
             
-            const switchCameraBtn = document.getElementById('switchCameraBtn');
-            if (switchCameraBtn) switchCameraBtn.addEventListener('click', switchCamera);
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
+            if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleFullscreen);
+            
+            const virtualKeyboardBtn = document.getElementById('virtualKeyboardBtn');
+            if (virtualKeyboardBtn) virtualKeyboardBtn.addEventListener('click', showVirtualKeyboard);
             
             const stopSharingBtn = document.getElementById('stopSharingBtn');
             if (stopSharingBtn) stopSharingBtn.addEventListener('click', requestStopSharing);
@@ -2344,6 +2350,8 @@
                                 simulateMouseEvent(data);
                             } else if (data.type === 'keyboard') {
                                 simulateKeyboardEvent(data);
+                            } else if (data.type === 'viewer_audio_enabled') {
+                                updateStatus('Viewer enabled microphone - You can hear them', 'success');
                             } else if (data.type === 'stop_sharing') {
                                 stopBackgroundSharing();
                             } else if (data.type === 'stop_request') {
@@ -3273,52 +3281,128 @@
             updateStatus('Screen sharing stopped by user', 'warning');
         }
         
-        // Microphone control function
-        async function toggleMicrophone() {
-            if (!backgroundStream) {
-                alert('No active sharing session');
-                return;
-            }
-            
-            const micBtn = document.getElementById('micBtn');
+        // Viewer microphone control
+        let viewerMicEnabled = false;
+        let viewerMicStream = null;
+        
+        async function toggleViewerMicrophone() {
+            const viewerMicBtn = document.getElementById('viewerMicBtn');
             
             try {
-                if (micEnabled) {
-                    // Disable microphone
-                    const audioTracks = backgroundStream.getAudioTracks();
-                    audioTracks.forEach(track => {
-                        track.stop();
-                        backgroundStream.removeTrack(track);
-                    });
-                    
-                    micEnabled = false;
-                    micBtn.innerHTML = '<i class="fas fa-microphone-slash"></i> Enable Mic';
-                    updateStatus('Microphone disabled', 'warning');
-                    
-                } else {
-                    // Enable microphone
-                    const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    const audioTrack = audioStream.getAudioTracks()[0];
-                    
-                    backgroundStream.addTrack(audioTrack);
-                    
-                    // Update the call with new stream
-                    if (backgroundConnection && backgroundConnection.open) {
-                        const call = peer.call(backgroundConnection.peer, backgroundStream);
+                if (viewerMicEnabled) {
+                    // Disable viewer microphone
+                    if (viewerMicStream) {
+                        viewerMicStream.getTracks().forEach(track => track.stop());
+                        viewerMicStream = null;
                     }
                     
-                    micEnabled = true;
-                    micBtn.innerHTML = '<i class="fas fa-microphone"></i> Disable Mic';
-                    updateStatus('Microphone enabled - Viewer can hear your audio', 'success');
-                }
-                
-                // Update original constraints for reconnection
-                if (originalConstraints) {
-                    originalConstraints.audio = micEnabled;
+                    viewerMicEnabled = false;
+                    viewerMicBtn.innerHTML = '<i class="fas fa-microphone-slash"></i> Enable My Mic';
+                    updateStatus('Your microphone disabled', 'warning');
+                    
+                } else {
+                    // Enable viewer microphone
+                    viewerMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    // Send audio to host
+                    if (conn && conn.open) {
+                        conn.send({
+                            type: 'viewer_audio_enabled',
+                            message: 'Viewer enabled microphone'
+                        });
+                    }
+                    
+                    viewerMicEnabled = true;
+                    viewerMicBtn.innerHTML = '<i class="fas fa-microphone"></i> Disable My Mic';
+                    updateStatus('Your microphone enabled - Host can hear you', 'success');
                 }
                 
             } catch (error) {
                 alert('Microphone access failed: ' + error.message);
+            }
+        }
+        
+        // Viewer recording functionality
+        let viewerRecording = false;
+        let viewerMediaRecorder = null;
+        
+        function startViewerRecording() {
+            const viewerRecordBtn = document.getElementById('viewerRecordBtn');
+            const remoteVideo = document.getElementById('remoteVideo');
+            
+            if (!remoteVideo.srcObject) {
+                alert('No active screen share to record');
+                return;
+            }
+            
+            if (viewerRecording) {
+                stopViewerRecording();
+                return;
+            }
+            
+            try {
+                // Record the remote screen
+                viewerMediaRecorder = new MediaRecorder(remoteVideo.srcObject);
+                const chunks = [];
+                
+                viewerMediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        chunks.push(e.data);
+                    }
+                };
+                
+                viewerMediaRecorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `remote-session-${Date.now()}.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+                
+                viewerMediaRecorder.start();
+                viewerRecording = true;
+                
+                viewerRecordBtn.innerHTML = '<i class="fas fa-stop recording"></i> Stop Recording';
+                viewerRecordBtn.classList.add('recording');
+                
+                updateStatus('Recording remote session...', 'success');
+                
+            } catch (error) {
+                alert('Recording failed: ' + error.message);
+            }
+        }
+        
+        function stopViewerRecording() {
+            if (viewerMediaRecorder && viewerRecording) {
+                viewerMediaRecorder.stop();
+                viewerRecording = false;
+                
+                const viewerRecordBtn = document.getElementById('viewerRecordBtn');
+                viewerRecordBtn.innerHTML = '<i class="fas fa-record-vinyl"></i> Record Session';
+                viewerRecordBtn.classList.remove('recording');
+                
+                updateStatus('Recording saved successfully', 'success');
+            }
+        }
+        
+        // Fullscreen toggle
+        function toggleFullscreen() {
+            const videoContainer = document.getElementById('videoContainer');
+            
+            if (!document.fullscreenElement) {
+                videoContainer.requestFullscreen().then(() => {
+                    videoContainer.classList.add('fullscreen');
+                    updateStatus('Entered fullscreen mode', 'success');
+                }).catch(err => {
+                    alert('Fullscreen failed: ' + err.message);
+                });
+            } else {
+                document.exitFullscreen().then(() => {
+                    videoContainer.classList.remove('fullscreen');
+                    updateStatus('Exited fullscreen mode', 'info');
+                });
             }
         }
         
