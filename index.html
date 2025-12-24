@@ -24,25 +24,18 @@
         
         // Enhanced ICE servers - now using turn-manager
         let enhancedIceServers = [
-            // Custom TURN Server (Ready to use)
-            {
-                urls: 'turn:coturn.teachsufian.com:3478',
-                username: 'sufian',
-                credential: 'sufian123'
-            },
-            
-            // AppRTC کے public servers
+            // Google STUN servers (Always working)
             {
                 urls: [
                     'stun:stun.l.google.com:19302',
                     'stun:stun1.l.google.com:19302',
-                    'turn:global.turn.twilio.com:3478?transport=udp'
-                ],
-                username: 'test',
-                credential: 'test'
+                    'stun:stun2.l.google.com:19302',
+                    'stun:stun3.l.google.com:19302',
+                    'stun:stun4.l.google.com:19302'
+                ]
             },
             
-            // Metered.ca TURN (Free)
+            // Metered.ca TURN (Free and reliable)
             {
                 urls: [
                     'turn:openrelay.metered.ca:80',
@@ -51,6 +44,14 @@
                 ],
                 username: 'openrelayproject',
                 credential: 'openrelayproject'
+            },
+            
+            // Backup STUN servers
+            {
+                urls: [
+                    'stun:stun.relay.metered.ca:80',
+                    'stun:global.stun.twilio.com:3478'
+                ]
             }
         ];
         
@@ -91,11 +92,10 @@
             webSocketServers = window.signalingClient.getServers();
         }
         
-        // Fallback PeerJS signaling servers
+        // Fallback PeerJS signaling servers - More reliable
         const signalingServers = [
-            'broker-connect.peerjs.com',
             '0.peerjs.com',
-            'peerjs-server.herokuapp.com'
+            'broker-connect.peerjs.com'
         ];
         
         // Raw WebSocket signaling connection
@@ -215,46 +215,35 @@
             }
         }
         
-        // Fallback connection system
+        // Fallback connection system - Simplified
         async function connectWithFallback(id, isHost = false) {
-            for (const server of signalingServers) {
-                try {
-                    const peer = new Peer(id, {
-                        config: {
-                            iceServers: enhancedIceServers,
-                            iceCandidatePoolSize: 50,
-                            iceTransportPolicy: 'all',
-                            bundlePolicy: 'max-bundle'
-                        },
-                        debug: 0,
-                        host: server,
-                        port: 443,
-                        secure: true,
-                        pingInterval: 2000
-                    });
-                    
-                    return await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            peer.destroy();
-                            reject(new Error(`${server} timeout`));
-                        }, 10000);
-                        
-                        peer.on('open', () => {
-                            clearTimeout(timeout);
-                            resolve(peer);
-                        });
-                        
-                        peer.on('error', (err) => {
-                            clearTimeout(timeout);
-                            peer.destroy();
-                            reject(err);
-                        });
-                    });
-                } catch (error) {
-                    console.log(`${server} failed, trying next...`);
-                }
-            }
-            throw new Error('All signaling servers failed');
+            // Direct PeerJS connection without custom servers
+            const peer = new Peer(id, {
+                config: {
+                    iceServers: enhancedIceServers
+                },
+                debug: 0
+            });
+            
+            return await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    peer.destroy();
+                    reject(new Error('Connection timeout'));
+                }, 15000);
+                
+                peer.on('open', () => {
+                    clearTimeout(timeout);
+                    console.log('✅ Peer connected with ID:', id);
+                    resolve(peer);
+                });
+                
+                peer.on('error', (err) => {
+                    clearTimeout(timeout);
+                    console.error('❌ Peer error:', err);
+                    peer.destroy();
+                    reject(err);
+                });
+            });
         }
         
         // Remove inline background animation since it's now in separate file
