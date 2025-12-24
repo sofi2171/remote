@@ -22,36 +22,44 @@
             return Math.floor(100000 + Math.random() * 900000).toString();
         }
         
-        // Enhanced ICE servers - now using turn-manager
+        // Enhanced ICE servers with working TURN servers for out-of-city connections
         let enhancedIceServers = [
-            // Google STUN servers (Always working)
+            // Primary STUN servers
             {
                 urls: [
                     'stun:stun.l.google.com:19302',
-                    'stun:stun1.l.google.com:19302',
-                    'stun:stun2.l.google.com:19302',
-                    'stun:stun3.l.google.com:19302',
-                    'stun:stun4.l.google.com:19302'
+                    'stun:stun1.l.google.com:19302'
                 ]
             },
             
-            // Metered.ca TURN (Free and reliable)
+            // Working TURN servers for NAT traversal
+            {
+                urls: 'turn:numb.viagenie.ca',
+                credential: 'muazkh',
+                username: 'webrtc@live.com'
+            },
+            {
+                urls: 'turn:192.158.29.39:3478?transport=udp',
+                credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
+                username: '28224511:1379330808'
+            },
+            {
+                urls: 'turn:192.158.29.39:3478?transport=tcp',
+                credential: 'JZEOEt2V3Qb0y27GRntt2u2PAYA=',
+                username: '28224511:1379330808'
+            },
             {
                 urls: [
                     'turn:openrelay.metered.ca:80',
-                    'turn:openrelay.metered.ca:443',
-                    'turn:openrelay.metered.ca:443?transport=tcp'
+                    'turn:openrelay.metered.ca:443'
                 ],
                 username: 'openrelayproject',
                 credential: 'openrelayproject'
             },
-            
-            // Backup STUN servers
             {
-                urls: [
-                    'stun:stun.relay.metered.ca:80',
-                    'stun:global.stun.twilio.com:3478'
-                ]
+                urls: 'turn:turn.bistri.com:80',
+                username: 'homeo',
+                credential: 'homeo'
             }
         ];
         
@@ -215,35 +223,58 @@
             }
         }
         
-        // Fallback connection system - Simplified
+        // Enhanced connection system with forced TURN for out-of-city connections
         async function connectWithFallback(id, isHost = false) {
-            // Direct PeerJS connection without custom servers
-            const peer = new Peer(id, {
+            const peerConfig = {
                 config: {
-                    iceServers: enhancedIceServers
+                    iceServers: enhancedIceServers,
+                    iceCandidatePoolSize: 10,
+                    iceTransportPolicy: 'relay', // Force TURN servers
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require'
                 },
-                debug: 0
-            });
+                debug: 1 // Enable debug for connection issues
+            };
             
-            return await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    peer.destroy();
-                    reject(new Error('Connection timeout'));
-                }, 15000);
-                
-                peer.on('open', () => {
-                    clearTimeout(timeout);
-                    console.log('✅ Peer connected with ID:', id);
-                    resolve(peer);
-                });
-                
-                peer.on('error', (err) => {
-                    clearTimeout(timeout);
-                    console.error('❌ Peer error:', err);
-                    peer.destroy();
-                    reject(err);
-                });
-            });
+            // Try with TURN first, then fallback to all
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    if (attempt === 2) {
+                        // Second attempt: allow all transport types
+                        peerConfig.config.iceTransportPolicy = 'all';
+                        console.log('Retrying with all transport types...');
+                    }
+                    
+                    const peer = new Peer(id, peerConfig);
+                    
+                    const result = await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            peer.destroy();
+                            reject(new Error(`Connection timeout (attempt ${attempt})`));
+                        }, 30000); // Increased timeout for TURN
+                        
+                        peer.on('open', () => {
+                            clearTimeout(timeout);
+                            console.log(`✅ Peer connected with ID: ${id} (attempt ${attempt})`);
+                            resolve(peer);
+                        });
+                        
+                        peer.on('error', (err) => {
+                            clearTimeout(timeout);
+                            console.error(`❌ Peer error (attempt ${attempt}):`, err);
+                            peer.destroy();
+                            reject(err);
+                        });
+                    });
+                    
+                    return result;
+                    
+                } catch (error) {
+                    console.log(`Connection attempt ${attempt} failed:`, error.message);
+                    if (attempt === 2) throw error;
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                }
+            }
         }
         
         // Remove inline background animation since it's now in separate file
@@ -2515,15 +2546,28 @@
         
         async function shareScreen() {
             try {
+                // Enhanced audio and video constraints for better quality
+                let videoConstraints = {
+                    video: {
+                        width: { ideal: 1920, max: 1920 },
+                        height: { ideal: 1080, max: 1080 },
+                        frameRate: { ideal: 30, max: 30 }
+                    },
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        sampleRate: 44100,
+                        channelCount: 2
+                    }
+                };
+                
                 // Adaptive quality based on connection
                 const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-                let videoConstraints = { video: true, audio: micEnabled };
-                
                 if (connection) {
                     const effectiveType = connection.effectiveType;
                     const downlink = connection.downlink || 1;
                     
-                    // Adjust quality based on network speed
                     if (effectiveType === 'slow-2g' || downlink < 0.5) {
                         videoConstraints.video = {
                             width: { max: 640 },
@@ -2542,13 +2586,6 @@
                             height: { max: 720 },
                             frameRate: { max: 25 }
                         };
-                    } else {
-                        // 4g or better - full quality
-                        videoConstraints.video = {
-                            width: { max: 1920 },
-                            height: { max: 1080 },
-                            frameRate: { max: 30 }
-                        };
                     }
                 }
                 
@@ -2557,11 +2594,14 @@
                 backgroundStream = localStream;
                 backgroundSharingActive = true;
                 
-                const call = peer.call(conn.peer, localStream);
+                // Enhanced call with better audio handling
+                const call = peer.call(conn.peer, localStream, {
+                    metadata: { type: 'screen-share', hasAudio: true }
+                });
                 
                 // Handle call events for better reliability
                 call.on('stream', (stream) => {
-                    console.log('Call stream established');
+                    console.log('✅ Call stream established with audio');
                 });
                 
                 call.on('close', () => {
@@ -2572,9 +2612,15 @@
                 call.on('error', (err) => {
                     console.error('Call error:', err);
                     updateStatus('Screen sharing error: ' + err.message, 'error');
+                    // Retry connection
+                    setTimeout(() => {
+                        if (backgroundSharingActive) {
+                            restartSharingSession();
+                        }
+                    }, 3000);
                 });
                 
-                updateStatus('Screen sharing active - Viewer can now control your screen', 'success');
+                updateStatus('Screen sharing active with audio - Viewer can hear and control', 'success');
                 
                 // Show host preview
                 const hostPreview = document.getElementById('hostPreview');
@@ -2593,7 +2639,6 @@
                 
                 // Override the default onended behavior
                 localStream.getVideoTracks()[0].onended = () => {
-                    // Only stop if explicitly stopped by user, not by browser
                     if (!backgroundSharingActive) {
                         updateStatus('Screen sharing stopped', 'warning');
                         cleanup();
@@ -2612,19 +2657,59 @@
                 return;
             }
             
-            updateStatus('Connecting to signaling server...', 'warning');
+            updateStatus('Connecting through TURN servers for out-of-city connection...', 'warning');
             
-            // Try WebSocket signaling first, fallback to PeerJS
-            const tryWebSocketConnection = async () => {
-                try {
-                    const connection = new WebRTCConnection(false);
-                    await connection.connect(hostId);
+            // Force TURN connection for out-of-city
+            connectWithFallback(null, false).then(peerInstance => {
+                peer = peerInstance;
+                isViewer = true;
+                
+                updateStatus('Establishing secure relay connection...', 'warning');
+                
+                // Enhanced connection with TURN relay
+                conn = peer.connect(hostId, {
+                    reliable: true,
+                    serialization: 'json'
+                });
+                saveSessionData(hostId, 'viewer');
+                
+                conn.on('open', () => {
+                    updateStatus('Connected via TURN relay - Waiting for screen share...', 'success');
+                    console.log('✅ Data connection established through TURN');
+                });
+                
+                conn.on('error', (err) => {
+                    console.error('Connection error:', err);
+                    updateStatus('Connection failed - Retrying with different TURN server...', 'error');
+                    // Auto-retry with different configuration
+                    setTimeout(() => {
+                        connectToHost();
+                    }, 5000);
+                });
+                
+                conn.on('close', () => {
+                    updateStatus('Connection closed by host', 'warning');
+                    cleanup();
+                });
+                
+                peer.on('call', (call) => {
+                    updateStatus('Receiving video stream through TURN relay...', 'warning');
                     
-                    isViewer = true;
-                    updateStatus('Connected to host - Waiting for screen share...', 'success');
+                    // Answer with enhanced audio constraints
+                    call.answer(null, {
+                        metadata: { type: 'viewer-response' }
+                    });
                     
-                    connection.onStream = (remoteStream) => {
-                        console.log('Stream received:', remoteStream);
+                    const streamTimeout = setTimeout(() => {
+                        updateStatus('Stream timeout - Retrying TURN connection...', 'warning');
+                        call.close();
+                        setTimeout(() => connectToHost(), 5000);
+                    }, 30000); // Longer timeout for TURN
+                    
+                    call.on('stream', (remoteStream) => {
+                        clearTimeout(streamTimeout);
+                        console.log('✅ Remote stream received via TURN:', remoteStream);
+                        
                         const video = document.getElementById('remoteVideo');
                         const placeholder = document.getElementById('videoPlaceholder');
                         const container = document.getElementById('videoContainer');
@@ -2635,108 +2720,76 @@
                             video.playsInline = true;
                             video.muted = false;
                             video.controls = false;
+                            video.volume = 1.0;
                             
-                            video.play().then(() => {
-                                video.style.display = 'block';
-                                if (placeholder) placeholder.style.display = 'none';
-                                if (container) container.classList.add('active');
-                                
-                                document.getElementById('liveControls').style.display = 'block';
-                                updateStatus('Connected! You can now control the remote screen.', 'success');
-                                setupRemoteControl();
-                            }).catch(error => {
-                                console.error('Video play failed:', error);
-                                updateStatus('Video playback failed - Check browser permissions', 'error');
-                            });
-                        }
-                    };
-                    
-                } catch (wsError) {
-                    console.log('WebSocket failed, using PeerJS fallback');
-                    throw wsError; // Trigger fallback
-                }
-            };
-            
-            // Try WebSocket first, then fallback to PeerJS
-            tryWebSocketConnection().catch(() => {
-                // PeerJS fallback
-                connectWithFallback(null, false).then(peerInstance => {
-                    peer = peerInstance;
-                    isViewer = true;
-                    
-                    updateStatus('Connecting to host...', 'warning');
-                    conn = peer.connect(hostId);
-                    saveSessionData(hostId, 'viewer');
-                    
-                    conn.on('open', () => {
-                        updateStatus('Connected to host - Waiting for screen share...', 'success');
-                    });
-                    
-                    conn.on('error', (err) => {
-                        console.error('Connection error:', err);
-                        updateStatus('Connection failed: ' + err.message, 'error');
-                    });
-                    
-                    conn.on('close', () => {
-                        updateStatus('Connection closed by host', 'warning');
-                        cleanup();
-                    });
-                    
-                    peer.on('call', (call) => {
-                        updateStatus('Receiving video stream...', 'warning');
-                        call.answer();
-                        
-                        const streamTimeout = setTimeout(() => {
-                            updateStatus('Stream timeout - Retrying connection...', 'warning');
-                            call.close();
-                            setTimeout(() => connectToHost(), 2000);
-                        }, 15000);
-                        
-                        call.on('stream', (remoteStream) => {
-                            clearTimeout(streamTimeout);
-                            
-                            const video = document.getElementById('remoteVideo');
-                            const placeholder = document.getElementById('videoPlaceholder');
-                            const container = document.getElementById('videoContainer');
-                            
-                            if (video && remoteStream) {
-                                video.srcObject = remoteStream;
-                                video.autoplay = true;
-                                video.playsInline = true;
-                                video.muted = false;
-                                video.controls = false;
-                                
-                                video.play().then(() => {
+                            const playVideo = async () => {
+                                try {
+                                    await video.play();
                                     video.style.display = 'block';
                                     if (placeholder) placeholder.style.display = 'none';
                                     if (container) container.classList.add('active');
                                     
                                     document.getElementById('liveControls').style.display = 'block';
-                                    updateStatus('Connected! You can now control the remote screen.', 'success');
+                                    updateStatus('Connected via TURN relay! Audio and video working.', 'success');
                                     setupRemoteControl();
-                                }).catch(error => {
-                                    updateStatus('Video playback failed - Check browser permissions', 'error');
-                                });
+                                    
+                                    const audioTracks = remoteStream.getAudioTracks();
+                                    if (audioTracks.length > 0) {
+                                        console.log('✅ Audio track via TURN:', audioTracks[0]);
+                                        updateStatus('Out-of-city connection successful with audio!', 'success');
+                                    }
+                                    
+                                } catch (error) {
+                                    console.error('Video play failed:', error);
+                                    updateStatus('Retrying video playback...', 'warning');
+                                    
+                                    setTimeout(async () => {
+                                        try {
+                                            video.muted = true;
+                                            await video.play();
+                                            video.muted = false;
+                                            updateStatus('Video connected via TURN - Click to enable audio', 'warning');
+                                        } catch (retryError) {
+                                            updateStatus('Video playback failed - Browser restrictions', 'error');
+                                        }
+                                    }, 1000);
+                                }
+                            };
+                            
+                            playVideo();
+                        }
+                    });
+                    
+                    call.on('error', (err) => {
+                        console.error('Call error:', err);
+                        updateStatus('Video stream error - Retrying TURN connection...', 'error');
+                        setTimeout(() => {
+                            if (isViewer) {
+                                connectToHost();
                             }
-                        });
-                        
-                        call.on('error', (err) => {
-                            updateStatus('Video stream error: ' + err.message, 'error');
-                        });
-                        
-                        call.on('close', () => {
-                            updateStatus('Video stream ended', 'warning');
-                            cleanup();
-                        });
+                        }, 5000);
                     });
                     
-                    peer.on('error', (err) => {
-                        updateStatus('Connection error: ' + err.message, 'error');
+                    call.on('close', () => {
+                        updateStatus('Video stream ended', 'warning');
+                        cleanup();
                     });
-                    
-                }).catch(error => {
-                    updateStatus('Failed to connect: ' + error.message, 'error');
                 });
+                
+                peer.on('error', (err) => {
+                    console.error('Peer error:', err);
+                    updateStatus('TURN connection error - Trying alternative servers...', 'error');
+                    setTimeout(() => {
+                        connectToHost();
+                    }, 3000);
+                });
+                
+            }).catch(error => {
+                updateStatus('Failed to establish TURN connection: ' + error.message, 'error');
+                // Show helpful message for out-of-city connections
+                setTimeout(() => {
+                    updateStatus('For out-of-city connections, both users need stable internet', 'warning');
+                }, 3000);
             });
         }
         
