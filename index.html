@@ -12,10 +12,11 @@
     <script nonce="rdp-nonce-2024" src="https://www.gstatic.com/firebasejs/9.0.0/firebase-firestore-compat.js"></script>
     
     <!-- Local Files -->
-    <link rel="stylesheet" href="animated-bg.css">
-    <script nonce="rdp-nonce-2024" src="animated-bg.js"></script>
-    <script nonce="rdp-nonce-2024" src="turn-manager.js"></script>
-    <script nonce="rdp-nonce-2024" src="signaling-client.js"></script>
+    <link rel="stylesheet" href="./animated-bg.css">
+    <script nonce="rdp-nonce-2024" src="./animated-bg.js"></script>
+    <script nonce="rdp-nonce-2024" src="./turn-manager.js"></script>
+    <script nonce="rdp-nonce-2024" src="./signaling-client.js"></script>
+    <script nonce="rdp-nonce-2024" src="./cross-network-test.js"></script>
     <script nonce="rdp-nonce-2024">
         // Fix 6-digit code generation
         function generateId() {
@@ -63,7 +64,9 @@
         // Initialize animated background when page loads
         window.addEventListener('load', () => {
             // Initialize live background graphics for all pages
-            initializeLiveBackgrounds();
+            if (typeof initializeLiveBackgrounds === 'function') {
+                initializeLiveBackgrounds();
+            }
             
             // Initialize animated background if available
             if (window.AnimatedBackground) {
@@ -246,11 +249,10 @@
         let localStream = null;
         let isHost = false;
         let isViewer = false;
-        
         // Fixed startConnection function
         async function startConnection(id, isHost = false) {
             try {
-                const peer = new Peer(id, peerConfig);
+                peer = new Peer(id, peerConfig);
                 
                 return new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
@@ -279,66 +281,6 @@
             } catch (error) {
                 console.error('Connection failed:', error);
                 throw error;
-            }
-        }ription(offer);
-                        this.ws.send(JSON.stringify({
-                            type: 'offer',
-                            offer: offer,
-                            roomId: this.roomId
-                        }));
-                    }
-                }
-            }
-        }
-        
-        // Global variables
-        let peer = null;
-        let conn = null;
-        let call = null;
-        let localStream = null;
-        let isHost = false;
-        let isViewer = false;
-        
-        // Enhanced connection with PeerJS public servers
-        async function startConnection(peerId, isHostMode = false) {
-            return new Promise((resolve, reject) => {
-                const peerOptions = {
-                    host: '0.peerjs.com',
-                    port: 443,
-                    secure: true,
-                    config: {
-                        iceServers: enhancedIceServers,
-                        iceTransportPolicy: 'all',
-                        bundlePolicy: 'max-bundle',
-                        rtcpMuxPolicy: 'require'
-                    },
-                    debug: 2
-                };
-                
-                const newPeer = new Peer(peerId, peerOptions);
-                
-                newPeer.on('open', (id) => {
-                    console.log('✅ Peer connected with ID:', id);
-                    resolve(newPeer);
-                });
-                
-                newPeer.on('error', (err) => {
-                    console.error('❌ Peer error:', err);
-                    reject(err);
-                });
-                
-                setTimeout(() => {
-                    reject(new Error('Peer connection timeout'));
-                }, 15000);
-            });
-        }ription(offer);
-                        this.ws.send(JSON.stringify({
-                            type: 'offer',
-                            offer: offer,
-                            roomId: this.roomId
-                        }));
-                    }
-                }
             }
         }
         
@@ -390,6 +332,7 @@
             try {
                 const stats = await pc.getStats();
                 let usingRelay = false;
+                let connectionType = 'Unknown';
                 
                 stats.forEach(report => {
                     if (report.type === 'candidate-pair' && report.state === 'succeeded') {
@@ -397,17 +340,22 @@
                             const remoteCandidate = stats.get(report.remoteCandidateId);
                             if (remoteCandidate && remoteCandidate.candidateType === 'relay') {
                                 usingRelay = true;
+                                connectionType = 'TURN Relay (Cross-Network)';
+                            } else if (remoteCandidate && remoteCandidate.candidateType === 'srflx') {
+                                connectionType = 'STUN (Same Network)';
+                            } else {
+                                connectionType = 'Direct P2P (Local Network)';
                             }
                         }
                     }
                 });
                 
                 if (usingRelay) {
-                    console.log('✅ TURN relay connection active (works across networks!)');
-                    updateStatus('✅ TURN connection active - Works across different networks!', 'success');
+                    console.log('✅ TURN relay connection - Works across cities/countries!');
+                    updateStatus(`✅ ${connectionType} - Global connectivity enabled!`, 'success');
                 } else {
-                    console.log('✅ Direct peer-to-peer connection');
-                    updateStatus('✅ Direct P2P connection', 'success');
+                    console.log('✅ Direct connection');
+                    updateStatus(`✅ ${connectionType}`, 'success');
                 }
             } catch (error) {
                 console.log('Could not determine connection type:', error);
@@ -2325,7 +2273,6 @@
         }
         
         // Remote Desktop Logic
-        let peer, conn, localStream, isHost = false, isViewer = false;
         
         // Check if device supports mobile screen sharing
         function checkMobileSupport() {
@@ -2471,17 +2418,20 @@
         
         async function startHost() {
             try {
-                const id = generateId(); // 6-digit ID
+                const id = generateId(); // Generate 6-digit ID
+                console.log('Generated ID:', id); // Debug log
                 updateStatus('Starting connection...', 'warning');
+                
+                // Immediately show the ID
+                document.getElementById('myId').classList.remove('hidden');
+                document.getElementById('idText').textContent = id;
+                updateStatus('Share this ID with viewer: ' + id, 'success');
                 
                 // Simple PeerJS connection
                 peer = await startConnection(id, true);
                 backgroundPeer = peer;
                 isHost = true;
                 
-                document.getElementById('myId').style.display = 'block';
-                document.getElementById('idText').textContent = id;
-                updateStatus('Share this ID with viewer: ' + id, 'success');
                 saveSessionData(id, 'host');
                 
                 // Wait for viewer connection
@@ -2774,7 +2724,7 @@
         
         async function connectToHost() {
             const hostId = document.getElementById('connectId').value.trim();
-            if (!hostId || hostId.length !== 6) {
+            if (!hostId || !/^[0-9]{6}$/.test(hostId)) {
                 updateStatus('Please enter a valid 6-digit code', 'error');
                 return;
             }

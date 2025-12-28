@@ -1,14 +1,14 @@
 # 🚀 Remote Desktop Pro - Serverless
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/remote-desktop-pro.svg)](https://github.com/yourusername/remote-desktop-pro/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/yourusername/remote-desktop-pro.svg)](https://github.com/yourusername/remote-desktop-pro/network)
+[![GitHub Pages](https://img.shields.io/badge/GitHub-Pages-blue.svg)](https://yourusername.github.io/remote-desktop-pro)
 
 ## 🌟 **100% Serverless Remote Desktop Solution**
 
 A modern, browser-based remote desktop application that requires **no server setup**! Built with WebRTC for peer-to-peer connections and Firebase for authentication.
 
-![Remote Desktop Pro](https://via.placeholder.com/800x400/0f172a/3b82f6?text=Remote+Desktop+Pro)
+### 🎯 **Live Demo**
+**[Try it now →](https://yourusername.github.io/remote-desktop-pro)**
 
 ## ✨ **Features**
 
@@ -24,25 +24,30 @@ A modern, browser-based remote desktop application that requires **no server set
 
 ## 🚀 **Quick Start**
 
-### **Method 1: Direct File Opening (Recommended)**
-1. Download or clone this repository
-2. Open `index.html` in any modern browser
-3. Click "Launch Remote Desktop"
-4. Sign in and start sharing!
+### **Method 1: GitHub Pages (Recommended)**
+1. Fork this repository
+2. Go to Settings > Pages
+3. Select source branch (main)
+4. Visit `https://yourusername.github.io/remote-desktop-pro`
 
-### **Method 2: Local Server (Optional)**
+### **Method 2: Local Development**
 ```bash
-# Using Python
-python -m http.server 8000
+# Clone repository
+git clone https://github.com/yourusername/remote-desktop-pro.git
+cd remote-desktop-pro
 
-# Using Node.js
-npx serve .
-
-# Using PHP
-php -S localhost:8000
+# Open in browser
+open index.html
 ```
 
-Then visit `http://localhost:8000`
+### **Method 3: With TURN Server (Optional)**
+```bash
+# Install Docker
+# Run TURN server
+start-turn-server.bat  # Windows
+# or
+docker-compose up -d coturn  # Linux/Mac
+```
 
 ## 📁 **Project Structure**
 

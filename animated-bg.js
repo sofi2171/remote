@@ -1,11 +1,11 @@
-// Simple background animation
-const AnimatedBackground = {
-    init: function() {
-        console.log('Background animation initialized');
-    }
-};
-
-window.AnimatedBackground = AnimatedBackground;
+// Simple background animation - Fixed version
+if (!window.AnimatedBackground) {
+    window.AnimatedBackground = {
+        init: function() {
+            console.log('Background animation initialized');
+        }
+    };
+}
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
